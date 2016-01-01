@@ -45,6 +45,7 @@ Tkinter isn't automatically installed, as well as PIL, so you have to
 
 There is no installation script yet.
 You can create your own startup scripts and put these into a place that is in your PATH.
+Alternatively, create an alias in your `.bashrc` for `python3 gfate/main.py`.
 
 
 [python3]: https://www.python.org/downloads/
