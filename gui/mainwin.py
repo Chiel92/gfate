@@ -161,6 +161,7 @@ class MainWin(Win):
             self.mouseDownStartPos = p
             # Pass the event on to my active child
             self.activeWin.onMouseDown(p, btnNr)
+
     def onMouseDownDouble(self, p, btnNr):
         # Forward double click
         if btnNr == 1 and self.activeWin and self.activeWin.containsPos(p):
@@ -169,6 +170,7 @@ class MainWin(Win):
         # Check scrollbar (you want to be able to click it multiple times close after eachother)
         elif btnNr == 1:
             self.scrollbarClicks(p)
+
     def onMouseDownTriple(self, p, btnNr):
         # Forward triple click
         if btnNr == 1 and self.activeWin and self.activeWin.containsPos(p):
@@ -177,6 +179,7 @@ class MainWin(Win):
         # Check scrollbar (you want to be able to click it multiple times close after eachother)
         elif btnNr == 1:
             self.scrollbarClicks(p)
+
     def onMouseMove(self, p, btnNr):
         # Move the tabs
         i = p.x // (self.settings.tabsize.w + self.settings.tabwidthextra)
@@ -193,6 +196,7 @@ class MainWin(Win):
         # Pass the event on to my active child
         if self.activeWin.containsPos(p):
             self.activeWin.onMouseMove(p, btnNr)
+
     def onMouseScroll(self, p, factor):
         # Pass the event on to my active child
         if self.activeWin.containsPos(p, False, False):
@@ -206,6 +210,7 @@ class MainWin(Win):
         elif self.activeWin.containsPos(p, True, False):
             self.activeWin.onMouseScroll(p, factor, True)
             self.redraw()
+
     def onMouseUp(self, p, btnNr):
         # Deselect
         self.selectedTab = -1

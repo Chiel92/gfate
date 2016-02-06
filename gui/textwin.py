@@ -1,3 +1,5 @@
+import logging
+
 from .win import *
 from .commandwin import CommandWin
 from .errorwin import ErrorWin
@@ -6,9 +8,11 @@ from .api import *
 from .colors import *
 import fate.userinterface
 import fate.navigation
+from fate.textview import TextView
 
 
 class TextWin(Win):
+
     """
     The text window class
     This class represents the window for a single file.
@@ -26,31 +30,37 @@ class TextWin(Win):
         self.doc.OnActivate.add(self.onActivate)
         # self.doc.OnPrompt.add(self.onPrompt)
         self.flickerCountLeft = 0
-        self.oldInterval = None # self.selection[-1]
-        self.textOffset = Pos(6, 4)     # Margin for the text in px (so that it doesn't hug the borders)
-        self._displayOffset = Pos(0, 0) # The character with this pos (col, row) is the first one to be drawn (so it's in the top left of the text win)
-        self._displayIndex = 0          # The index of the above character in the self.text string
+        self.oldInterval = None  # self.selection[-1]
+        # Margin for the text in px (so that it doesn't hug the borders)
+        self.textOffset = Pos(6, 4)
+        # The character with this pos (col, row) is the first one to be drawn (so
+        # it's in the top left of the text win)
+        self._displayOffset = Pos(0, 0)
+        # The index of the above character in the self.text string
+        self._displayIndex = 0
         self.textRange = Size(0, 0)     # The amount of letters that fit in the screen
-        self.nrOfLines = 0              # The total number of lines (ie. newline chars) in self.text
+        # The total number of lines (ie. newline chars) in self.text
+        self.nrOfLines = 0
 
     #
     # Properties and shortcuts
     #
     @property
     def text(self):
-        return self.doc.view.text
+        return self.textview.text
 
     @property
     def selection(self):
-        return self.doc.view.selection
+        return self.textview.selection
 
     @property
     def highlighting(self):
-        return self.doc.view.highlighting
+        return self.textview.highlighting
 
     @property
     def displayOffset(self):
         return self._displayOffset
+
     @displayOffset.setter
     def displayOffset(self, value):
         self._displayOffset = Pos(value)
@@ -69,12 +79,16 @@ class TextWin(Win):
     # The main methods
     #
     def loop(self):
+        """TODO: add docstring. Maybe change name to something more verbose, e.g. update. It is
+        not actually a loop.
+        """
+
         # Update some stats for fast access
-        if self.app.mainWindow.redrawMarker:
-            oldNrOfLines = self.nrOfLines
-            self.nrOfLines = self.text.count('\n')
-            if self.nrOfLines != oldNrOfLines:
-                self.app.mainWindow.updateScrollImgs()
+        # if self.app.mainWindow.redrawMarker:
+        # oldNrOfLines = self.nrOfLines
+        # self.nrOfLines = textview.text.count('\n')
+        # if self.nrOfLines != oldNrOfLines:
+        # self.app.mainWindow.updateScrollImgs()
         # Adjust display offset on cursor movement
 
         # TODO: if the display offset or index is changed, then we need to reset the cursor and redraw.
@@ -85,27 +99,40 @@ class TextWin(Win):
         #     self.resetCursor()
         #     self.redraw()
         # Update commandWindow and errorWindow (the latter even when not active)
-        if self.commandWin.enabled:
-            self.commandWin.loop()
-        self.errorWin.loop()
+        # if self.commandWin.enabled:
+        # self.commandWin.loop()
+        # self.errorWin.loop()
         # Update cursor
-        self.flickerCountLeft -= 1
-        if self.flickerCountLeft in {0, self.settings.flickercount}:
-            if self.flickerCountLeft == 0:
-                self.flickerCountLeft = self.settings.flickercount * 2
-            self.redraw()
+        # self.flickerCountLeft -= 1
+        # if self.flickerCountLeft in {0, self.settings.flickercount}:
+        # if self.flickerCountLeft == 0:
+        # self.flickerCountLeft = self.settings.flickercount * 2
+        # self.redraw()
 
-    def redraw(self):
+    def redraw(self):  # FIXME: what is this for?
         self.app.mainWindow.redraw()
 
     def draw(self):
         """Draw the text win"""
+
+        # Obtain a textview object from the core
+        width, height = self.doc.ui.viewport_size
+        start = self.doc.ui.viewport_offset
+        if width <= 0 or height <= 0 or start < 0 or start > len(self.doc.text):
+            logging.error(
+                'One of the parameters width {}, height {}, offset {} is not valid'
+                .format(width, height, start))
+            return
+
+        # We want to create a bit of a buffer to allow explorational scrolling
+        self.textview = TextView.for_entire_text(self.doc, width)
+
         # Draw selection (and get the selections text already)
         selectionstext = ''
         w, h = self.settings.userfontsize.t
         lineNrW = self.calcLineNumberWidth(w)
         for i, (b, e) in enumerate(self.selection):
-            if b >= e:
+            if b == e:
                 bx, by = self.getCoordFromChar(b).t
                 self.drawCursor(bx, by, lineNrW)
                 selectionstext += '({}, {}: 0), '.format(by + 1, bx)
@@ -143,8 +170,11 @@ class TextWin(Win):
         if not offsetY <= cy <= offsetY + self.textRange.h:
             return
         w, h = self.settings.userfontsize.t
-        cursorVisible = self.flickerCountLeft <= self.settings.flickercount and not self.commandWin.enabled and cx >= offsetX
-        self.drawCursorLine(self.textOffset + (lineNrW, 0) + (w*(cx - offsetX), h*(cy - offsetY)), cursorVisible)
+        cursorVisible = (self.flickerCountLeft <= self.settings.flickercount
+                         and not self.commandWin.enabled and cx >= offsetX)
+        self.drawCursorLine(
+            self.textOffset + (lineNrW, 0) + (w * (cx - offsetX), h * (cy - offsetY)),
+            cursorVisible)
 
     def drawSelection(self, w, h, b, e, bx, by, lineNrW):
         """Draw a single selection rectangle"""
@@ -155,17 +185,18 @@ class TextWin(Win):
             # Can't deal with OSX line endings or word wrap (TODO !)
             if i == e - 1 or i >= len(self.text) or self.text[i] == '\n':
                 if offsetY <= by <= offsetY + self.textRange.h:
-                    fromX = w*(bx - offsetX)
-                    width = w*(i + 1 - b)
+                    fromX = w * (bx - offsetX)
+                    width = w * (i + 1 - b)
                     if fromX < 0:
                         width += fromX
                         fromX = 0
                     if width > 0:
-                        self.drawRect(color, self.textOffset + (lineNrW, 0) + (fromX, h*(by - offsetY)), Size(width, h))
+                        self.drawRect(
+                            color, self.textOffset + (lineNrW, 0) + (fromX, h * (by - offsetY)), Size(width, h))
                 if i == e - 1:
                     return (bx + i + 1 - b, by)
                 bx, by = 0, by + 1
-                b = i # Mark the character no. of the selection beginning
+                b = i  # Mark the character no. of the selection beginning
             i += 1
         raise Exception('Character at end of selection not found')
 
@@ -173,47 +204,63 @@ class TextWin(Win):
         """Draw the part of the text that should appear on the screen"""
         settings, colors = self.settings, self.colors
         w, h = settings.userfontsize.t      # The size of one character
-        i = self.displayIndex               # The index of the character currently being processed
-        x, y = (0, 0)                       # The coordinates of that char (relative to screen)
-        maxLength = len(self.text)          # The amount of letters in a text (used as stop criterium)
-        # The length of a linenumber - Can't deal with OSX line endings or word wrap (TODO !)
+        # The index of the character currently being processed
+        i = self.displayIndex
+        # The coordinates of that char (relative to screen)
+        x, y = (0, 0)
+        # The amount of letters in a text (used as stop criterium)
+        maxLength = len(text)
+        # The length of a linenumber - Can't deal with OSX line endings or word
+        # wrap (TODO !)
         while True:
-            length = 0                      # The length of the interval currently being processed (nr of characters)
-            try:
-                label = '' if i >= maxLength else self.highlighting[i]  # The current label
-            except:
-                print("i: {}, max len: {}, text view len: {}, text view highlighting len: {}".format(i, maxLength, len(self.text), len(self.highlighting)))
+            # The length of the interval currently being processed (nr of characters)
+            length = 0
+            # try:
+            # The current label
+            label = '' if i >= maxLength else self.highlighting[i]
+            # FIXME: why catch a general exception here?
+            # except:
+            # print("i: {}, max len: {}, text view len: {}, text view highlighting len: {}".format(
+            # i, maxLength, len(text), len(highlighting)))
 
             # Draw a text interval with the same label
             # Can't deal with OSX line endings or word wrap (TODO !)
             while i < maxLength:
-                # assert i in self.highlighting
-                tempLabel = self.highlighting[i]
-                if tempLabel != label or self.text[i] == '\n':
+                # assert i in highlighting
+                tempLabel = highlighting[i]
+                if tempLabel != label or text[i] == '\n':
                     break
                 length += 1
                 i += 1
-            self.drawString(str(y + 1 + self.displayOffset.y), colors.linenumber, (lineNrW - settings.linenumbermargin, self.textOffset.y + h*y), 'ne')
-            self.drawString(self.text[i - length : i], colors.fromLabel(label), self.textOffset + (lineNrW + w*x, h*y))
+            self.drawString(str(y + 1 + self.displayOffset.y),
+                            colors.linenumber,
+                            (lineNrW - settings.linenumbermargin, self.textOffset.y + h * y),
+                            'ne')
+            self.drawString(text[i - length: i],
+                            colors.fromLabel(label),
+                            self.textOffset + (lineNrW + w * x, h * y))
 
             # Stop drawing at the end of the screen or the end of the text
             if h * y > self.size.h or i >= maxLength:
                 break
 
             try:
-                # Special case for the new line character - Can't deal with OSX line endings or word wrap (TODO !)
-                if self.text[i] == '\n':
+                # Special case for the new line character - Can't deal with OSX line
+                # endings or word wrap (TODO !)
+                if text[i] == '\n':
                     y += 1
                     x = 0
-                    # Now skip the first "displayOffset.x'th" characters (except with newline chars)
+                    # Now skip the first "displayOffset.x'th" characters (except with
+                    # newline chars)
                     for j in range(self.displayOffset.x + 1):
                         i += 1
-                        if i >= maxLength or self.text[i] == '\n':
+                        if i >= maxLength or text[i] == '\n':
                             break
                 else:
                     x += length
             except:
-                print("i: {}, max len: {}, text view len: {}".format(i, maxLength, len(self.text)))
+                print("i: {}, max len: {}, text view len: {}".format(
+                    i, maxLength, len(text)))
 
     def drawScrollbars(self):
         """Draw the scroll bars"""
@@ -224,7 +271,8 @@ class TextWin(Win):
                 scrollImgs[j] = self.loadImgTk(self.app.mainWindow.scrollImgsPil[i])
             self.updatedScrollImages = False
         imgBgV, imgTop, imgMidV, imgBottom, imgBgH, imgLeft, imgMidH, imgRight, imgN, imgE, imgS, imgW = scrollImgs
-        vert, hor = self.settings.scrollbars in {'both', 'vertical'}, self.settings.scrollbars in {'both', 'horizontal'}
+        vert, hor = self.settings.scrollbars in {
+            'both', 'vertical'}, self.settings.scrollbars in {'both', 'horizontal'}
         barW = imgTop.width()
         padding = (self.settings.scrollbarwidth - barW) // 2
         x, y = self.size.w + padding, self.size.h + padding
@@ -234,7 +282,8 @@ class TextWin(Win):
         if vert:
             posY = self.calcScrollbarPos(True)
             # Background
-            self.drawRect(self.colors.scrollbg, Pos(x - padding, 0), Size(imgBgV.width(), imgBgV.height()))
+            self.drawRect(self.colors.scrollbg, Pos(
+                x - padding, 0), Size(imgBgV.width(), imgBgV.height()))
             self.drawImg(Pos(x - padding, 0), imgBgV)
             # Arrows
             self.drawImg(Pos(x, padding), imgN)
@@ -247,7 +296,8 @@ class TextWin(Win):
         if hor:
             posX = self.calcScrollbarPos(False)
             # Background
-            self.drawRect(self.colors.scrollbg, Pos(0, y - padding), Size(imgBgH.width(), imgBgH.height()))
+            self.drawRect(self.colors.scrollbg, Pos(
+                0, y - padding), Size(imgBgH.width(), imgBgH.height()))
             self.drawImg(Pos(0, y - padding), imgBgH)
             # Arrows
             self.drawImg(Pos(padding, y), imgW)
@@ -271,17 +321,21 @@ class TextWin(Win):
             return int(ratio * (h - img.height() - 2 * barW)) + barW + padding
         # Calculate the position of the horizontal scrollbar
         # if self.nrOfLines > 0:
-        ratio = self.displayOffset.x / 50 # self.nrOfLines # TODO: use self.maxNrOfCharsOnALine
+        # self.nrOfLines # TODO: use self.maxNrOfCharsOnALine
+        ratio = self.displayOffset.x / 50
         return int(ratio * (w - img.width() - 2 * barW)) + barW + padding
 
     def scrollText(self, vert, n):
         # Scroll a window vertically (or horizontally if vert is False) down n chars
         if vert:
-            maxLines = self.text.count('\n') # Can't deal with OSX line endings or word wrap (TODO !)
-            self.displayOffset = (self.displayOffset.x, min(maxLines, max(0, self.displayOffset.y + n)))
+            # Can't deal with OSX line endings or word wrap (TODO !)
+            maxLines = self.text.count('\n')
+            self.displayOffset = (
+                self.displayOffset.x, min(maxLines, max(0, self.displayOffset.y + n)))
         else:
-            maxChars = 50 # TODO: use self.maxNrOfCharsOnALine
-            self.displayOffset = (min(maxChars, max(0, self.displayOffset.x + n)), self.displayOffset.y)
+            maxChars = 50  # TODO: use self.maxNrOfCharsOnALine
+            self.displayOffset = (
+                min(maxChars, max(0, self.displayOffset.x + n)), self.displayOffset.y)
 
     def getTitle(self):
         return self.doc.filename + ('' if self.doc.saved else '*')
@@ -292,10 +346,11 @@ class TextWin(Win):
     def calcLineNumberWidth(self, w):
         lineNumberWidth = 0
         if self.settings.linenumbers:
-            lineNumberWidth = 2 * self.settings.linenumbermargin + w * len(str(self.nrOfLines))
+            lineNumberWidth = 2 * self.settings.linenumbermargin + \
+                w * len(str(self.nrOfLines))
         return lineNumberWidth
 
-    def containsPos(self, p, includeVerticalScroll = False, includeHorizontalScroll = False):
+    def containsPos(self, p, includeVerticalScroll=False, includeHorizontalScroll=False):
         extra = Size(0, 0)
         if includeVerticalScroll:
             extra.w += self.settings.scrollbarwidth
@@ -312,18 +367,22 @@ class TextWin(Win):
         if self.errorWin.enabled:
             self.errorWin.onKeyDown(c)
 
-    def onMouseScroll(self, p, factor, scrollVertical = True):
+    def onMouseScroll(self, p, factor, scrollVertical=True):
         self.scrollText(scrollVertical, self.settings.scrolllines * factor)
         if self.commandWin.enabled:
             self.commandWin.onMouseScroll(p, factor)
 
     def resize(self, draw=True):
         assert draw == False
-        vert, hor = self.settings.scrollbars in {'both', 'vertical'}, self.settings.scrollbars in {'both', 'horizontal'}
-        scrollSize = Size(self.settings.scrollbarwidth if vert else 0, self.settings.scrollbarwidth if hor else 0)
-        statusSize = (0, self.settings.statusheight if self.settings.statuswinenabled else 0)
-        self.size = self.settings.size - (0, self.settings.tabsize.h) - scrollSize - statusSize
-        w, h = self.settings.userfontsize.t # The size of one character
+        vert, hor = self.settings.scrollbars in {
+            'both', 'vertical'}, self.settings.scrollbars in {'both', 'horizontal'}
+        scrollSize = Size(
+            self.settings.scrollbarwidth if vert else 0, self.settings.scrollbarwidth if hor else 0)
+        statusSize = (
+            0, self.settings.statusheight if self.settings.statuswinenabled else 0)
+        self.size = self.settings.size - \
+            (0, self.settings.tabsize.h) - scrollSize - statusSize
+        w, h = self.settings.userfontsize.t  # The size of one character
         s = self.size - self.textOffset
         lineNrWidth = self.calcLineNumberWidth(w)
         self.textRange = Size((s.w - lineNrWidth) // w, s.h // h)
@@ -341,14 +400,15 @@ class TextWin(Win):
     def getCoordFromChar(self, n, start=0, startPosTuple=(0, 0)):
         """Return (x, y) coordinates of the n-th character. This is a terrible method."""
         # Not a very fast method, especially because it's executed often and loops O(n) in the number of characters,
-        # but then Chiel's datastructure for text will probably be changed and then this method has to be changed as well.
+        # but then Chiel's datastructure for text will probably be changed and
+        # then this method has to be changed as well.
         x, y = startPosTuple
         text = self.text
         for i in range(start, n):
             x += 1
             if i >= len(text):
                 return Pos(x + 1, y)
-            if text[i] == '\n': # Can't deal with OSX line endings or word wrap (TODO !)
+            if text[i] == '\n':  # Can't deal with OSX line endings or word wrap (TODO !)
                 y += 1
                 x = 0
         return Pos(x, y)
@@ -356,7 +416,8 @@ class TextWin(Win):
     def getCharFromCoord(self, p):
         """Return character index from the (x, y) coordinates. This is a terrible method."""
         # Not a very fast method, especially because it's executed often and loops O(n) in the number of characters,
-        # but then Chiel's datastructure for text will probably be changed and then this method has to be changed as well.
+        # but then Chiel's datastructure for text will probably be changed and
+        # then this method has to be changed as well.
         i = 0
         w, h = self.settings.userfontsize.t
         offset = self.pos + self.textOffset
@@ -366,7 +427,7 @@ class TextWin(Win):
         try:
             while cy < y:
                 c = text[i]
-                if c == '\n': # Can't deal with OSX line endings or word wrap (TODO !)
+                if c == '\n':  # Can't deal with OSX line endings or word wrap (TODO !)
                     cy += 1
                 i += 1
             while cx < x:
@@ -382,11 +443,13 @@ class TextWin(Win):
     def getCharFromPixelCoord(self, p):
         """Return character index from the (x, y) coordinates (in pixels). This is a terrible method."""
         # Not a very fast method, especially because it's executed often and loops O(n) in the number of characters,
-        # but then Chiel's datastructure for text will probably be changed and then this method has to be changed as well.
+        # but then Chiel's datastructure for text will probably be changed and
+        # then this method has to be changed as well.
         w, h = self.settings.userfontsize.t
         lineNrWidth = self.calcLineNumberWidth(w)
         offset = self.pos + self.textOffset + (lineNrWidth, 0)
-        x, y = (p.x - offset.x) // w + self.displayOffset.x, (p.y - offset.y) // h + self.displayOffset.y
+        x, y = (p.x - offset.x) // w + \
+            self.displayOffset.x, (p.y - offset.y) // h + self.displayOffset.y
         return self.getCharFromCoord(Pos(x, y))
 
     #
